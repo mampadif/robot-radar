@@ -1,156 +1,209 @@
 import streamlit as st
-import requests
-import time
+import textstat
 import plotly.graph_objects as go
+import re
+import numpy as np
+from datetime import datetime
+import time
 
-# --- AFFILIATE CONFIGURATION ---
-# 1. WP ENGINE (High Ticket - $200 Min)
-LINK_WPENGINE = "https://www.shareasale.com/r.cfm?b=394686&u=YOUR_ID&m=41388"
+# --- AFFILIATE LINKS ---
+LINK_UNDETECTABLE = "https://undetectable.ai/?via=YOUR_ID"
+LINK_ORIGINALITY = "https://originality.ai/?ref=YOUR_ID"
+LINK_QUILLBOT = "https://quillbot.com/?ref=YOUR_ID"
 
-# 2. CLOUDWAYS (Recurring Income)
-LINK_CLOUDWAYS = "https://www.cloudways.com/en/?id=YOUR_ID"
+# --- PAGE CONFIG ---
+st.set_page_config(
+    page_title="Robot Radar - AI Content Detector", 
+    page_icon="🤖", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# 3. WEBHOSTING UK (Your New Awin Link)
-LINK_WHUK = "https://www.awin1.com/cread.php?awinmid=27692&awinaffid=2667810&ued=https%3A%2F%2Fwww.webhosting.uk.com%2Fwordpress-hosting"
+# --- SESSION STATE INIT ---
+if 'text_input' not in st.session_state:
+    st.session_state.text_input = ""
 
-st.set_page_config(page_title="Site Speed Doctor", page_icon="⚡", layout="centered")
-
-# --- CUSTOM CSS (FIXED FOR DARK MODE) ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
-    .main-header { font-size: 3rem; text-align: center; font-weight: 800; color: #333; margin-bottom: 10px; }
-    .sub-header { font-size: 1.2rem; text-align: center; color: #666; margin-bottom: 30px; }
-    .metric-box { text-align: center; padding: 20px; background: #f0f2f6; border-radius: 10px; margin: 10px 0; }
-    
-    /* FIXED: Force Text Black for Recommendation Box */
-    .recommendation-box { 
-        border-left: 5px solid #ff4b4b; 
-        padding: 20px; 
-        background-color: #fff5f5; 
-        border-radius: 5px; 
-        margin-top: 20px;
-        color: #000000 !important;
-    }
-    .recommendation-box h3, .recommendation-box p, .recommendation-box strong {
-        color: #000000 !important;
-    }
-
-    /* Buttons */
-    .cta-button { 
-        display: block; width: 100%; padding: 12px; margin: 5px 0;
-        text-align: center; color: white !important; text-decoration: none; 
-        font-weight: bold; border-radius: 8px; font-size: 1rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        transition: transform 0.1s;
-    }
-    .cta-button:hover { transform: scale(1.02); }
-    
-    .btn-wpengine { background-color: #0ecad4; color: #000 !important; }
-    .btn-cloudways { background-color: #2c3e50; }
-    .btn-whuk { background-color: #0056b3; } /* WebHosting UK Blue */
-    
-    /* FIXED: Force Text Black for Info Cards */
-    .info-card { 
-        background-color: #e8f4f8; 
-        padding: 15px; 
-        border-radius: 8px; 
-        border: 1px solid #d1e7dd; 
+    .main-header { 
+        font-size: 3.5rem; 
         text-align: center; 
-        height: 100%; 
-        color: #000000 !important;
+        font-weight: 800; 
+        margin-bottom: 10px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
-    .info-card b, .info-card h3, .info-card p {
-        color: #000000 !important;
+    .sub-header { text-align: center; font-size: 1.2rem; color: #666; margin-bottom: 2rem; }
+    .score-card { 
+        text-align: center; padding: 25px; background: white;
+        border-radius: 15px; margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-left: 5px solid;
     }
+    .metric-card {
+        background: white; padding: 20px; border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); text-align: center; margin: 10px 0;
+    }
+    .stButton > button { width: 100%; font-weight: 600; }
+    
+    .cta-button { 
+        display: block; width: 100%; padding: 15px; margin: 10px 0;
+        text-align: center; color: white !important; text-decoration: none; 
+        font-weight: bold; border-radius: 8px; font-size: 1.1rem;
+        transition: all 0.3s ease; border: none; cursor: pointer;
+    }
+    .cta-button:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+    .btn-humanize { background: linear-gradient(135deg, #8E24AA, #AB47BC); }
+    .btn-verify { background: linear-gradient(135deg, #2E7D32, #4CAF50); }
+    .btn-improve { background: linear-gradient(135deg, #1565C0, #42A5F5); }
 </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIC ---
-def check_ttfb(url):
-    try:
-        if not url.startswith(('http://', 'https://')): url = 'https://' + url
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        start = time.time()
-        response = requests.get(url, headers=headers, timeout=10)
-        ttfb = (time.time() - start) * 1000
-        return {"success": True, "ttfb": round(ttfb, 2), "url": url}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+# --- HELPER FUNCTIONS (CALLBACKS) ---
+def clear_text():
+    st.session_state.text_input = ""
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2966/2966486.png", width=80)
-    st.markdown("### ⚡ Speed Benchmarks")
-    st.info("""
-    **Time To First Byte (TTFB)**
-    
-    🟢 **< 200ms:** Excellent
-    
-    🟡 **200-600ms:** Average
-    
-    🔴 **> 600ms:** Critical
-    """)
-    st.markdown("---")
-    st.caption("Tool by [Your Name]")
+def load_sample(sample_type):
+    samples = {
+        "AI": "Artificial intelligence is a rapidly evolving field of computer science. It involves creating systems that can perform tasks requiring human intelligence. These tasks include visual perception, speech recognition, and decision-making. Machine learning is a subset of AI that focuses on data analysis.",
+        "Human": "I honestly hate waking up early. It's the worst. Yesterday? I broke a coffee mug. Snap. Just like that. It hit the floor and I just stood there staring at it for five minutes because, honestly, what else can you do at 6 AM?"
+    }
+    st.session_state.text_input = samples[sample_type]
 
-# --- MAIN UI ---
-st.markdown('<div class="main-header">⚡ Site Speed Doctor</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Check your server response time (TTFB) instantly.</div>', unsafe_allow_html=True)
+# --- ANALYSIS LOGIC ---
+def advanced_analysis(text):
+    if len(text.split()) < 30: return None
+    
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s.strip() for s in sentences if len(s) > 1]
+    words = text.split()
+    
+    if not sentences: return None
+    
+    sentence_lengths = [len(s.split()) for s in sentences]
+    flesch_grade = textstat.flesch_kincaid_grade(text)
+    sentence_variance = np.std(sentence_lengths)
+    complex_word_ratio = len([w for w in words if len(w) > 6]) / len(words)
+    
+    # Heuristic scoring logic (Simplified for demo)
+    ai_score = 40 
+    if sentence_variance < 4: ai_score += 30
+    elif sentence_variance < 7: ai_score += 15
+    
+    if 8 <= flesch_grade <= 12: ai_score += 10
+    if complex_word_ratio < 0.15: ai_score += 10
+    
+    return {
+        "score": min(max(ai_score, 5), 98),
+        "flesch_grade": round(flesch_grade, 1),
+        "sentence_variance": round(sentence_variance, 1),
+        "complex_word_ratio": round(complex_word_ratio * 100, 1),
+        "word_count": len(words)
+    }
 
-col1, col2 = st.columns([3, 1])
-with col1:
-    target_url = st.text_input("Website URL", placeholder="example.com", label_visibility="collapsed")
+# --- UI LAYOUT ---
+col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    scan_btn = st.button("🚀 Test Speed", type="primary", use_container_width=True)
+    st.markdown('<div class="main-header">🤖 Robot Radar</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Advanced AI Content Detector & Humanizer</div>', unsafe_allow_html=True)
 
-if not scan_btn:
-    st.markdown("### Why Server Speed Matters")
-    c1, c2, c3 = st.columns(3)
-    with c1: st.markdown('<div class="info-card">📈 <b>SEO Ranking</b><br><br>Google penalizes slow servers.</div>', unsafe_allow_html=True)
-    with c2: st.markdown('<div class="info-card">💰 <b>Conversion</b><br><br>1s delay = 7% drop in sales.</div>', unsafe_allow_html=True)
-    with c3: st.markdown('<div class="info-card">📱 <b>Mobile Users</b><br><br>Slow sites fail on 4G/5G.</div>', unsafe_allow_html=True)
+col_left, col_right = st.columns([2, 1])
 
-if scan_btn and target_url:
-    with st.spinner("Pinging server..."):
-        result = check_ttfb(target_url)
+with col_left:
+    # Text Area
+    user_text = st.text_area(
+        "Paste content below:", 
+        height=250, 
+        placeholder="Enter text here to analyze patterns...",
+        key="text_input"
+    )
+    
+    # Buttons using Callbacks
+    b1, b2, b3 = st.columns([1, 1, 1])
+    with b1:
+        st.button("🗑️ Clear", on_click=clear_text)
+    with b2:
+        # args must be a tuple, hence the comma: ("AI",)
+        st.button("📝 Load AI Sample", on_click=load_sample, args=("AI",))
+    with b3:
+        st.button("👤 Load Human Sample", on_click=load_sample, args=("Human",))
+    
+    st.markdown("###") 
+    analyze_clicked = st.button("🔍 ANALYZE CONTENT", type="primary", use_container_width=True)
+
+with col_right:
+    st.markdown("""
+    <div class="metric-card">
+        <h3>📊 How It Works</h3>
+        <p><strong>Burstiness:</strong> Sentence variety</p>
+        <p><strong>Perplexity:</strong> Word complexity</p>
+        <p><strong>Patterns:</strong> Robotic signatures</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- RESULTS ---
+if analyze_clicked and user_text:
+    with st.spinner("Scanning patterns..."):
+        time.sleep(0.8)
+        results = advanced_analysis(user_text)
+    
+    if results:
+        score = results['score']
         
-    if result["success"]:
-        ttfb = result["ttfb"]
+        if score > 70: color, status, emoji = "#dc3545", "LIKELY AI-GENERATED", "🚨"
+        elif score > 40: color, status, emoji = "#ffc107", "SUSPICIOUS / MIXED", "⚠️"
+        else: color, status, emoji = "#28a745", "LIKELY HUMAN", "✅"
         
-        if ttfb < 200: color, msg, status = "green", "Excellent! Your server is fast.", "PASS"
-        elif ttfb < 600: color, msg, status = "orange", "Acceptable, but could be faster.", "WARN"
-        else: color, msg, status = "red", "CRITICAL: Your hosting is too slow.", "FAIL"
-
+        # Gauge Chart
         fig = go.Figure(go.Indicator(
-            mode = "gauge+number", value = ttfb, title = {'text': "Response Time (ms)"},
-            gauge = {'axis': {'range': [0, 1500]}, 'bar': {'color': color},
-                     'steps': [{'range': [0, 200], 'color': "#d4edda"}, {'range': [200, 600], 'color': "#fff3cd"}, {'range': [600, 1500], 'color': "#f8d7da"}],
-                     'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 600}}
+            mode = "gauge+number", value = score,
+            title = {'text': f"AI Probability<br><span style='font-size:0.8em;color:{color}'>{status}</span>"},
+            gauge = {
+                'axis': {'range': [0, 100]}, 'bar': {'color': color},
+                'steps': [{'range': [0, 40], 'color': "#d4edda"}, {'range': [40, 70], 'color': "#fff3cd"}, {'range': [70, 100], 'color': "#f8d7da"}],
+                'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': score}
+            }
         ))
+        fig.update_layout(height=350, margin=dict(t=80, b=20, l=30, r=30))
         st.plotly_chart(fig, use_container_width=True)
-
-        if status == "FAIL" or status == "WARN":
+        
+        # Metrics
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Burstiness", results['sentence_variance'])
+        m2.metric("Grade Level", results['flesch_grade'])
+        m3.metric("Complexity", f"{results['complex_word_ratio']}%")
+        m4.metric("Word Count", results['word_count'])
+        
+        # Recommendation
+        if score > 50:
+            st.error(f"**{emoji} High AI Patterns Detected**")
             st.markdown(f"""
-            <div class="recommendation-box">
-                <h3 style="margin-top:0">⚠️ Diagnosis: {msg}</h3>
-                <p>Your server took <strong>{ttfb}ms</strong> just to wake up.</p>
-                <p><strong>Solution:</strong> Move to a high-performance host.</p>
+            <div class="score-card" style="border-left-color: {color};">
+                <h3>🚨 Don't get penalized by Google.</h3>
+                <p>Your content lacks human variance.</p>
+                <a href="{LINK_UNDETECTABLE}" target="_blank" class="cta-button btn-humanize">✨ Humanize with Undetectable.ai</a>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.success(f"**{emoji} Natural Writing Detected**")
+            st.markdown(f"""
+            <div class="score-card" style="border-left-color: {color};">
+                <h3>✅ Looks Good!</h3>
+                <p>Great flow. Want a second opinion?</p>
+                <a href="{LINK_ORIGINALITY}" target="_blank" class="cta-button btn-verify">🛡️ Verify with Originality.ai</a>
             </div>
             """, unsafe_allow_html=True)
             
-            st.markdown("### 🚀 Recommended Fixes:")
-            
-            # --- UPDATED TRIFECTA WITH WEBHOSTING UK ---
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.markdown(f"""<a href="{LINK_WPENGINE}" target="_blank" class="cta-button btn-wpengine">💎 WP Engine<br><span style='font-size:0.8em'>Best Managed</span></a>""", unsafe_allow_html=True)
-            with c2:
-                st.markdown(f"""<a href="{LINK_CLOUDWAYS}" target="_blank" class="cta-button btn-cloudways">☁️ Cloudways<br><span style='font-size:0.8em'>Best Speed</span></a>""", unsafe_allow_html=True)
-            with c3:
-                # UPDATED BUTTON FOR WHUK
-                st.markdown(f"""<a href="{LINK_WHUK}" target="_blank" class="cta-button btn-whuk">🇬🇧 WebHosting UK<br><span style='font-size:0.8em'>Best Value</span></a>""", unsafe_allow_html=True)
-        else:
-            st.success(f"✅ {msg}")
-            st.balloons()
     else:
-        st.error(f"Error: {result.get('error')}")
+        st.error("❌ Text is too short. Please provide at least 30 words.")
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.header("🔍 About Robot Radar")
+    st.info("This tool analyzes text patterns to detect robotic writing styles.")
+    st.markdown("---")
+    st.subheader("🔗 Resources")
+    st.markdown(f"- [Humanize AI]({LINK_UNDETECTABLE})")
+    st.markdown(f"- [Verify Originality]({LINK_ORIGINALITY})")
+    st.markdown(f"- [Improve Grammar]({LINK_QUILLBOT})")
