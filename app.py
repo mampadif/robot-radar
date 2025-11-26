@@ -3,10 +3,10 @@ import textstat
 import plotly.graph_objects as go
 import re
 import numpy as np
-from datetime import datetime
 import time
 
 # --- AFFILIATE LINKS ---
+# Replace these with your actual affiliate links if you have them
 LINK_UNDETECTABLE = "https://undetectable.ai/?via=YOUR_ID"
 LINK_ORIGINALITY = "https://originality.ai/?ref=YOUR_ID"
 LINK_QUILLBOT = "https://quillbot.com/?ref=YOUR_ID"
@@ -24,8 +24,10 @@ if 'text_input' not in st.session_state:
     st.session_state.text_input = ""
 
 # --- CUSTOM CSS ---
+# This CSS ensures the app looks good and fixes the "white text on white background" issue
 st.markdown("""
 <style>
+    /* Main Header Styling */
     .main-header { 
         font-size: 3.5rem; 
         text-align: center; 
@@ -35,16 +37,41 @@ st.markdown("""
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
-    .sub-header { text-align: center; font-size: 1.2rem; color: #666; margin-bottom: 2rem; }
+    .sub-header { 
+        text-align: center; 
+        font-size: 1.2rem; 
+        color: #888; 
+        margin-bottom: 2rem; 
+    }
+
+    /* Card Styling - Fixed for Dark Mode */
+    /* This forces the text color to be dark grey (#333) so it's visible on the white background */
     .score-card { 
         text-align: center; padding: 25px; background: white;
         border-radius: 15px; margin-bottom: 20px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-left: 5px solid;
+        color: #333333 !important; 
     }
     .metric-card {
         background: white; padding: 20px; border-radius: 10px;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); text-align: center; margin: 10px 0;
+        color: #333333 !important;
     }
+    
+    /* Force Headers inside cards to be black */
+    .metric-card h3, .score-card h3 {
+        color: #000000 !important;
+        margin-bottom: 10px;
+    }
+    .metric-card p, .score-card p {
+        color: #333333 !important;
+        margin: 5px 0;
+    }
+    .metric-card strong {
+        color: #000000 !important;
+    }
+
+    /* Buttons */
     .stButton > button { width: 100%; font-weight: 600; }
     
     .cta-button { 
@@ -60,7 +87,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- HELPER FUNCTIONS (CALLBACKS) ---
+# --- HELPER FUNCTIONS ---
 def clear_text():
     st.session_state.text_input = ""
 
@@ -86,7 +113,7 @@ def advanced_analysis(text):
     sentence_variance = np.std(sentence_lengths)
     complex_word_ratio = len([w for w in words if len(w) > 6]) / len(words)
     
-    # Heuristic scoring logic (Simplified for demo)
+    # Heuristic scoring logic
     ai_score = 40 
     if sentence_variance < 4: ai_score += 30
     elif sentence_variance < 7: ai_score += 15
@@ -124,7 +151,6 @@ with col_left:
     with b1:
         st.button("🗑️ Clear", on_click=clear_text)
     with b2:
-        # args must be a tuple, hence the comma: ("AI",)
         st.button("📝 Load AI Sample", on_click=load_sample, args=("AI",))
     with b3:
         st.button("👤 Load Human Sample", on_click=load_sample, args=("Human",))
@@ -133,6 +159,7 @@ with col_left:
     analyze_clicked = st.button("🔍 ANALYZE CONTENT", type="primary", use_container_width=True)
 
 with col_right:
+    # Information Card (Now visible in Dark Mode!)
     st.markdown("""
     <div class="metric-card">
         <h3>📊 How It Works</h3>
